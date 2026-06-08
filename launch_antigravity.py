@@ -163,29 +163,55 @@ def run_deduplicator():
 # Step 2: Sync CLI history
 # ----------------------------------------------------
 def run_sync():
-    print("[*] Checking for CLI history updates to sync...")
+    print("[*] Performing bidirectional synchronization between CLI and GUI...")
     if not os.path.exists(CLI_CONVOS_DIR):
-        return
-
+        os.makedirs(CLI_CONVOS_DIR)
     if not os.path.exists(GUI_CONVOS_DIR):
         os.makedirs(GUI_CONVOS_DIR)
 
-    copied_count = 0
-    for file_name in os.listdir(CLI_CONVOS_DIR):
-        if not (file_name.endswith(".db") or file_name.endswith(".pb")):
-            continue
-        src = os.path.join(CLI_CONVOS_DIR, file_name)
-        dst = os.path.join(GUI_CONVOS_DIR, file_name)
-        if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
+    synced_to_gui = 0
+    synced_to_cli = 0
+
+    cli_files = {f for f in os.listdir(CLI_CONVOS_DIR) if f.endswith(".db") or f.endswith(".pb")}
+    gui_files = {f for f in os.listdir(GUI_CONVOS_DIR) if f.endswith(".db") or f.endswith(".pb")}
+    all_files = cli_files.union(gui_files)
+
+    for file_name in all_files:
+        cli_path = os.path.join(CLI_CONVOS_DIR, file_name)
+        gui_path = os.path.join(GUI_CONVOS_DIR, file_name)
+
+        exists_in_cli = os.path.exists(cli_path)
+        exists_in_gui = os.path.exists(gui_path)
+
+        if exists_in_cli and not exists_in_gui:
             try:
-                shutil.copy2(src, dst)
-                copied_count += 1
+                shutil.copy2(cli_path, gui_path)
+                synced_to_gui += 1
+            except Exception:
+                pass
+        elif exists_in_gui and not exists_in_cli:
+            try:
+                shutil.copy2(gui_path, cli_path)
+                synced_to_cli += 1
+            except Exception:
+                pass
+        else:
+            try:
+                cli_mtime = os.path.getmtime(cli_path)
+                gui_mtime = os.path.getmtime(gui_path)
+
+                if cli_mtime > gui_mtime + 1:
+                    shutil.copy2(cli_path, gui_path)
+                    synced_to_gui += 1
+                elif gui_mtime > cli_mtime + 1:
+                    shutil.copy2(gui_path, cli_path)
+                    synced_to_cli += 1
             except Exception:
                 pass
 
-    if copied_count > 0:
-        print(f"[+] Synced {copied_count} new conversation files from CLI.")
-        if os.path.exists(STATE_FILE):
+    if synced_to_gui > 0 or synced_to_cli > 0:
+        print(f"[+] Bidirectional sync complete. CLI -> GUI: {synced_to_gui} files, GUI -> CLI: {synced_to_cli} files.")
+        if synced_to_gui > 0 and os.path.exists(STATE_FILE):
             try:
                 with open(STATE_FILE, "r", encoding="utf-8") as f:
                     content = f.read()
@@ -199,7 +225,7 @@ def run_sync():
             except Exception as e:
                 print(f"[-] Failed to update migration state: {e}")
     else:
-        print("[+] No new CLI conversations to sync.")
+        print("[+] Conversations are already fully synchronized.")
 
 # ----------------------------------------------------
 # Step 3: Launch Antigravity

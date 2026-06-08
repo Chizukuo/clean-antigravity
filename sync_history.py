@@ -17,29 +17,57 @@ def sync_history():
     print(f"[*] Base directory: {gemini_dir}")
 
     if not os.path.exists(cli_convos_dir):
-        print(f"[-] Error: CLI conversations directory not found at {cli_convos_dir}")
-        return
-
+        os.makedirs(cli_convos_dir)
     if not os.path.exists(gui_convos_dir):
         os.makedirs(gui_convos_dir)
 
-    # 1. Copy conversation logs
-    print("[*] Copying conversation files from CLI to GUI...")
-    copied_count = 0
-    for file_name in os.listdir(cli_convos_dir):
-        if not (file_name.endswith(".db") or file_name.endswith(".pb")):
-            continue
-        src = os.path.join(cli_convos_dir, file_name)
-        dst = os.path.join(gui_convos_dir, file_name)
-        if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
-            shutil.copy2(src, dst)
-            copied_count += 1
+    # 1. Bidirectional copy of conversation logs
+    print("[*] Performing bidirectional synchronization...")
+    synced_to_gui = 0
+    synced_to_cli = 0
 
-    print(f"[+] Copied {copied_count} new conversation files.")
+    cli_files = {f for f in os.listdir(cli_convos_dir) if f.endswith(".db") or f.endswith(".pb")}
+    gui_files = {f for f in os.listdir(gui_convos_dir) if f.endswith(".db") or f.endswith(".pb")}
+    all_files = cli_files.union(gui_files)
 
-    # 2. Reset migration flags in state file
-    if os.path.exists(state_file):
-        print("[*] Resetting migration flags in state file to trigger re-import...")
+    for file_name in all_files:
+        cli_path = os.path.join(cli_convos_dir, file_name)
+        gui_path = os.path.join(gui_convos_dir, file_name)
+
+        exists_in_cli = os.path.exists(cli_path)
+        exists_in_gui = os.path.exists(gui_path)
+
+        if exists_in_cli and not exists_in_gui:
+            try:
+                shutil.copy2(cli_path, gui_path)
+                synced_to_gui += 1
+            except Exception:
+                pass
+        elif exists_in_gui and not exists_in_cli:
+            try:
+                shutil.copy2(gui_path, cli_path)
+                synced_to_cli += 1
+            except Exception:
+                pass
+        else:
+            try:
+                cli_mtime = os.path.getmtime(cli_path)
+                gui_mtime = os.path.getmtime(gui_path)
+
+                if cli_mtime > gui_mtime + 1:
+                    shutil.copy2(cli_path, gui_path)
+                    synced_to_gui += 1
+                elif gui_mtime > cli_mtime + 1:
+                    shutil.copy2(gui_path, cli_path)
+                    synced_to_cli += 1
+            except Exception:
+                pass
+
+    print(f"[+] Synced {synced_to_gui} files to GUI, {synced_to_cli} files to CLI.")
+
+    # 2. Reset migration flags in state file (if files synced to GUI)
+    if synced_to_gui > 0 and os.path.exists(state_file):
+        print("[*] Resetting migration flags in state file to trigger re-import in GUI...")
         # Backup
         shutil.copy2(state_file, state_file + ".bak")
         
@@ -67,7 +95,7 @@ def sync_history():
         print("1. Start the Antigravity desktop app once so it can import the newly copied conversations.")
         print("2. Close the app again and run `clean_antigravity.py` to clean up any duplicate project entries that the import process may have created.")
     else:
-        print("[-] Warning: antigravity_state.pbtxt not found. Direct import trigger skipped.")
+        print("[+] Sync complete. No GUI state updates required.")
 
 if __name__ == "__main__":
     sync_history()
