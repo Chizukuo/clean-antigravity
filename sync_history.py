@@ -31,7 +31,7 @@ def sync_history():
             continue
         src = os.path.join(cli_convos_dir, file_name)
         dst = os.path.join(gui_convos_dir, file_name)
-        if not os.path.exists(dst):
+        if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
             shutil.copy2(src, dst)
             copied_count += 1
 

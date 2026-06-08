@@ -199,6 +199,41 @@ def run_cleanup(auto_approve=False):
             
             if success:
                 print(f"[+] Database updated successfully. Re-mapped {replaced_count} occurrences.")
+                
+                # Also patch SQLite db files in conversations directory
+                convos_dir = os.path.join(gemini_dir, "antigravity", "conversations")
+                if os.path.exists(convos_dir):
+                    import sqlite3
+                    import glob
+                    patched_dbs = 0
+                    for db_path in glob.glob(os.path.join(convos_dir, "*.db")):
+                        try:
+                            conn = sqlite3.connect(db_path)
+                            c = conn.cursor()
+                            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trajectory_metadata_blob';")
+                            if c.fetchone():
+                                c.execute("SELECT id, data FROM trajectory_metadata_blob")
+                                rows = c.fetchall()
+                                db_updated = False
+                                for row_id, data in rows:
+                                    if isinstance(data, bytes):
+                                        new_data = data
+                                        for dup_id, primary_id in mappings.items():
+                                            dup_bytes = dup_id.encode('utf-8')
+                                            primary_bytes = primary_id.encode('utf-8')
+                                            if dup_bytes in new_data:
+                                                new_data = new_data.replace(dup_bytes, primary_bytes)
+                                        if new_data != data:
+                                            c.execute("UPDATE trajectory_metadata_blob SET data = ? WHERE id = ?", (new_data, row_id))
+                                            db_updated = True
+                                if db_updated:
+                                    conn.commit()
+                                    patched_dbs += 1
+                            conn.close()
+                        except Exception as e:
+                            print(f"[-] Warning: Failed to patch {os.path.basename(db_path)}: {e}")
+                    if patched_dbs > 0:
+                        print(f"[+] Patched project IDs in {patched_dbs} conversation databases.")
             else:
                 print("[-] Error: Failed to write to database file due to file lock.")
                 print(f"[*] Restoring database from backup {ts_bak_path}...")
