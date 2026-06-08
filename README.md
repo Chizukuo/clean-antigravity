@@ -25,6 +25,25 @@ A suite of safe, offline utility scripts to maintain and fix Google DeepMind's *
 5. **Start Menu Shortcut Creator (`create_shortcut.py`)**:
    Windows-only utility. Automatically creates or updates the Windows Start Menu Programs shortcut to point to `launch.bat` (our launcher), making it easy to start the automated sync flow.
 
+### Clash Proxy Support (No TUN Mode)
+The automated launcher (`launch_antigravity.py` / `launch.vbs`) automatically detects if a Clash proxy is running on local port `7890`.
+- **GUI Application**: If Clash is detected, the launcher automatically configures `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` environment variables and starts the Electron GUI with the `--proxy-server` argument. This routes both the GUI client and its background Language Server (which communicates with Google's API endpoints) through Clash. No TUN mode is required.
+- **CLI Application**: If you are using the CLI (`agy` command), you can manually set the proxy environment variables in your active shell before running commands:
+  - **Command Prompt (CMD)**:
+    ```cmd
+    set HTTP_PROXY=http://127.0.0.1:7890
+    set HTTPS_PROXY=http://127.0.0.1:7890
+    set ALL_PROXY=socks5://127.0.0.1:7890
+    ```
+  - **PowerShell**:
+    ```powershell
+    $env:HTTP_PROXY="http://127.0.0.1:7890"
+    $env:HTTPS_PROXY="http://127.0.0.1:7890"
+    $env:ALL_PROXY="socks5://127.0.0.1:7890"
+    ```
+  You can also add these to your Windows System Environment Variables to make Clash proxy routing permanent for all shells and CLI tools.
+
+
 ### Usage
 
 #### Daily Launching (Automated Synchronization)
@@ -76,6 +95,25 @@ python clean_antigravity.py
 
 5. **开始菜单快捷方式生成器 (`create_shortcut.py`)**:
    Windows 专用小工具。自动在 Windows 「开始菜单」的程序列表中创建或更新指向 `launch.bat` 的快捷方式，便于直接搜索启动。
+
+### Clash 代理支持 (无需 TUN 模式)
+一键启动器 (`launch_antigravity.py` 或通过桌面/开始菜单快捷方式运行 `launch.vbs`) 会在启动时自动检测本地 `7890` 端口（Clash 默认混合端口）是否处于监听状态：
+- **GUI 客户端**：若检测到 Clash 处于运行状态，启动器将自动注入 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY` 环境变量，并通过 `--proxy-server` 参数拉起 Electron 客户端。这使得 GUI 客户端以及后台的核心语言服务（Language Server，用于连接 Google API 服务端）的全部网络请求都直接走 Clash 代理，彻底摆脱了必须开启 TUN 模式的限制。
+- **CLI 终端工具**：如果您使用的是终端 CLI 工具 (`agy` 命令行)，可以在当前命令行会话中手动设置代理环境变量以走 Clash 代理：
+  - **命令提示符 (CMD)**:
+    ```cmd
+    set HTTP_PROXY=http://127.0.0.1:7890
+    set HTTPS_PROXY=http://127.0.0.1:7890
+    set ALL_PROXY=socks5://127.0.0.1:7890
+    ```
+  - **PowerShell**:
+    ```powershell
+    $env:HTTP_PROXY="http://127.0.0.1:7890"
+    $env:HTTPS_PROXY="http://127.0.0.1:7890"
+    $env:ALL_PROXY="socks5://127.0.0.1:7890"
+    ```
+  提示：您也可以在 Windows 系统环境变量设置中将这些变量添加为永久用户/系统环境变量，这样所有的终端窗口和命令行工具都会默认走 Clash 代理。
+
 
 ### 使用方法
 

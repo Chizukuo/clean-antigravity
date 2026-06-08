@@ -233,25 +233,73 @@ def run_sync():
 # ----------------------------------------------------
 # Step 3: Launch Antigravity
 # ----------------------------------------------------
-def launch_app():
+def setup_proxy():
+    import socket
+    # Check if proxy is already defined in environment
+    for var in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]:
+        if var in os.environ:
+            val = os.environ[var]
+            print(f"[+] Using existing proxy from environment variable {var}: {val}")
+            return True, val
+
+    # Auto-detect Clash on port 7890
+    clash_port = 7890
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", clash_port)) == 0:
+                proxy_url = f"http://127.0.0.1:{clash_port}"
+                socks_url = f"socks5://127.0.0.1:{clash_port}"
+                # Set both upper and lower case env variables for robust client compatibility
+                os.environ["HTTP_PROXY"] = proxy_url
+                os.environ["HTTPS_PROXY"] = proxy_url
+                os.environ["ALL_PROXY"] = socks_url
+                os.environ["http_proxy"] = proxy_url
+                os.environ["https_proxy"] = proxy_url
+                os.environ["all_proxy"] = socks_url
+                print(f"[+] Clash proxy detected on port {clash_port}. Proxy env variables applied.")
+                return True, proxy_url
+    except Exception as e:
+        print(f"[-] Error auto-detecting Clash proxy: {e}")
+    
+    print("[*] Clash proxy not detected on port 7890. Proceeding without proxy.")
+    return False, None
+
+# ----------------------------------------------------
+# Step 3: Launch Antigravity
+# ----------------------------------------------------
+def launch_app(use_proxy=False, proxy_url=None):
     if not APP_EXE or not os.path.exists(APP_EXE):
         print(f"[-] Error: Antigravity executable not found at '{APP_EXE}'")
         return
 
     print(f"[*] Launching Antigravity GUI...")
     if sys.platform == "win32":
-        os.startfile(APP_EXE)
+        if use_proxy and proxy_url:
+            # On Windows, Chromium/Electron does not automatically respect proxy env variables,
+            # so we pass the --proxy-server command-line argument.
+            subprocess.Popen([APP_EXE, f"--proxy-server={proxy_url}"])
+        else:
+            os.startfile(APP_EXE)
     elif sys.platform == "darwin":
-        subprocess.Popen(["open", APP_EXE])
+        if use_proxy and proxy_url:
+            subprocess.Popen(["open", APP_EXE, "--args", f"--proxy-server={proxy_url}"])
+        else:
+            subprocess.Popen(["open", APP_EXE])
     else:
-        subprocess.Popen([APP_EXE])
+        if use_proxy and proxy_url:
+            subprocess.Popen([APP_EXE, f"--proxy-server={proxy_url}"])
+        else:
+            subprocess.Popen([APP_EXE])
     print("[+] Antigravity has been started.")
 
 if __name__ == "__main__":
     import json
+    # Detect and set up Clash proxy if active
+    use_proxy, proxy_url = setup_proxy()
     # Run offline deduplication first (to clean up from last GUI session)
     run_deduplicator()
     # Run sync history (to stage any new CLI conversations for import)
     run_sync()
     # Launch GUI
-    launch_app()
+    launch_app(use_proxy, proxy_url)
