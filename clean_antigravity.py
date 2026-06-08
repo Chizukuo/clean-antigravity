@@ -16,7 +16,7 @@ def run_cleanup(auto_approve=False):
     bak_path = pb_path + ".bak"
 
     print("==================================================")
-    print("     Antigravity Workspace Deduplicator v1.0      ")
+    print("     Antigravity Workspace Deduplicator v2.0      ")
     print("==================================================")
     print(f"[*] Base directory detected: {gemini_dir}")
 
@@ -41,13 +41,21 @@ def run_cleanup(auto_approve=False):
             resources = data.get("projectResources", {}).get("resources", [])
             if not resources:
                 continue
-            
-            folder_uri = resources[0].get("gitFolder", {}).get("folderUri")
+            res = resources[0]
+            folder_uri = ""
+            if "folderUri" in res:
+                folder_uri = res["folderUri"]
+            elif "gitFolder" in res and "folderUri" in res["gitFolder"]:
+                folder_uri = res["gitFolder"]["folderUri"]
+                
             if folder_uri:
-                uri_to_projects[folder_uri.lower()].append({
+                import urllib.parse
+                normalized_uri = urllib.parse.unquote(folder_uri).lower()
+                uri_to_projects[normalized_uri].append({
                     "id": project_id,
                     "name": project_name,
-                    "file": file_name
+                    "file": file_name,
+                    "is_git": "gitFolder" in res
                 })
         except Exception as e:
             print(f"[-] Warning: Failed to parse {file_name}: {e}")
@@ -58,8 +66,13 @@ def run_cleanup(auto_approve=False):
     all_duplicates = []
 
     for uri, projs in uri_to_projects.items():
-        # Keep the shortest name/first ID as primary
-        projs.sort(key=lambda x: (len(x["name"]), x["id"]))
+        # Keep clean names (non-paths) and shorter names as primary
+        def sort_key(x):
+            name = x["name"]
+            is_path = 1 if ("\\" in name or "/" in name) else 0
+            return (is_path, len(name), x["id"])
+            
+        projs.sort(key=sort_key)
         primary = projs[0]
         primaries[uri] = primary
         
@@ -102,19 +115,20 @@ def run_cleanup(auto_approve=False):
     for uri, p in primaries.items():
         file_path = os.path.join(projects_dir, p["file"])
         if not os.path.exists(file_path):
+            res_config = {
+                "gitFolder": {
+                    "folderUri": uri,
+                    "defaultBranch": "main",
+                    "allowWrite": True
+                }
+            } if p.get("is_git", True) else {
+                "folderUri": uri
+            }
             proj_config = {
                 "id": p["id"],
                 "name": p["name"],
                 "projectResources": {
-                    "resources": [
-                        {
-                            "gitFolder": {
-                                "folderUri": uri,
-                                "defaultBranch": "main",
-                                "allowWrite": True
-                            }
-                        }
-                    ]
+                    "resources": [res_config]
                 }
             }
             with open(file_path, "w", encoding="utf-8") as pf:
