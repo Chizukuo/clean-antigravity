@@ -178,7 +178,7 @@ def launch_app():
 
     print(f"[*] Launching Antigravity GUI...")
     if sys.platform == "win32":
-        subprocess.Popen([APP_EXE], creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        os.startfile(APP_EXE)
     elif sys.platform == "darwin":
         subprocess.Popen(["open", APP_EXE])
     else:
