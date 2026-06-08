@@ -6,55 +6,91 @@
 
 ## English
 
-A safe, offline utility to resolve the duplicated project files issue in Google DeepMind's **Antigravity** desktop coding assistant.
+A suite of safe, offline utility scripts to maintain and fix Google DeepMind's **Antigravity** desktop coding assistant.
 
-### The Problem
-During version upgrades, Antigravity's migration helper converts each old conversation into a standalone project (e.g. `my-project 2`, `my-project 3`), spawning dozens of duplicate project configuration JSON files in your config directory.
+### Features
 
-If you delete these JSON files manually, the running `language_server` will notice their absence and silently hide/delete the corresponding conversations from the database (`agyhub_summaries_proto.pb`), causing you to lose your chat history in the UI.
+1. **Workspace Deduplicator (`clean_antigravity.py`)**:
+   Resolves the issue where version upgrades split old conversations into standalone projects (e.g. `project 2`, `project 3`). Safely consolidates duplicate configurations and maps conversation history to their primary project ID in the database (`agyhub_summaries_proto.pb`) without loss of history.
+   
+2. **Black Screen Patcher (`patch_blackscreen.py`)**:
+   Diagnoses and patches the application when stuck on a black/loading screen due to transient network changes (`ERR_NETWORK_CHANGED`) or local loopback self-signed SSL/TLS verification issues (`ERR_CERT_AUTHORITY_INVALID`). It extracts `app.asar`, injects retry and cert bypass logic, and repackages it.
 
-### The Solution
-This script solves the issue in one click by operating **offline** (while the Language Server is safely stopped):
-1. Detects all unique workspace folders and identifies which project configuration is the primary one.
-2. Gracefully stops the Antigravity Language Server process.
-3. Automatically creates a backup of your conversation database.
-4. Performs a binary search-and-replace to map all conversations from duplicate projects to their primary project ID.
-5. Deletes all redundant duplicate project JSON configuration files.
+3. **CLI/GUI History Syncer (`sync_history.py`)**:
+   Copies conversation history logs from your terminal-based CLI configuration (`antigravity-cli`) into your GUI app directory and resets migration flags in `antigravity_state.pbtxt` to force the GUI to register and import CLI chats.
 
 ### Usage
-1. Close the Antigravity desktop app.
-2. Clone this repository and run the script:
-   ```bash
-   python clean_antigravity.py
-   ```
-3. Restart Antigravity. All your conversation history will be safely consolidated under their corresponding main projects.
+
+Before running any script, make sure to close the Antigravity desktop app.
+
+#### 1. Consolidation & Deduplication
+```bash
+python clean_antigravity.py
+```
+
+#### 2. Fixing the Black/Loading Screen
+```bash
+# Patch the client (requires node/npx installed)
+python patch_blackscreen.py patch
+
+# Revert to original backed-up state if needed
+python patch_blackscreen.py restore
+```
+
+#### 3. Synchronizing CLI and GUI Chats
+```bash
+# 1. Sync the files
+python sync_history.py
+
+# 2. Launch Antigravity ONCE to let the app import the new histories
+# 3. Close the app and run the consolidator to merge duplicate projects that the import process may have created:
+python clean_antigravity.py
+```
 
 ---
 
 ## 中文说明
 
-一个安全、一键式的离线实用工具，用于解决 Google DeepMind **Antigravity** 桌面编程助手中“对话被拆分成单独项目”以及“项目列表重复混乱”的问题。
+用于维护和修复 Google DeepMind **Antigravity** 桌面端编程助手的一系列安全、离线的实用脚本工具包。
 
-### 根本原因
-在版本升级过程中，Antigravity 的迁移工具会将旧对话单独转换为一个独立项目（例如产生 `my-project 2`、`my-project 3` 等重复项目），并在配置目录中生成大量的重复 JSON 文件。
+### 功能介绍
 
-如果您直接在磁盘上手动删除这些 JSON 文件，后台运行的 `language_server` 会感知到文件丢失，并自动从其数据库（`agyhub_summaries_proto.pb`）中隐藏/删除对应的对话记录，导致您在界面上丢失历史聊天记录。
+1. **重复项目清理与合并 (`clean_antigravity.py`)**:
+   解决版本升级后，旧对话被拆分为独立项目（例如产生 `my-project 2`、`my-project 3`）的问题。在二进制层面对数据库（`agyhub_summaries_proto.pb`）重新映射，把所有对话关联到唯一主项目下，并删除冗余的 JSON 文件，确保不丢失历史记录。
 
-### 解决方案
-本脚本通过**离线状态下**的一步到位操作彻底解决此问题：
-1. 扫描所有项目配置文件，按物理路径归类，确定每个工作区的唯一主项目和冗余重复项目。
-2. 强制终止后台的 Antigravity 语言服务器进程，防止其用内存缓存覆盖我们的修改。
-3. 自动对您的对话数据库文件进行安全备份。
-4. 在二进制层面对数据库进行映射重构，把重复项目下的所有历史对话重新关联到唯一的主项目下。
-5. 清理磁盘上所有冗余的重复项目 JSON 配置文件。
+2. **黑屏/加载卡死修复 (`patch_blackscreen.py`)**:
+   解决客户端由于网络状态变动（`ERR_NETWORK_CHANGED`）或本地环回自签名证书 SSL 校验失败（`ERR_CERT_AUTHORITY_INVALID`）导致启动卡在黑屏或加载界面的问题。通过解包 `app.asar` 并向 `utils.js` / `languageServer.js` 注入重试及证书信任逻辑后重新打包。
+
+3. **CLI/GUI 历史对话同步 (`sync_history.py`)**:
+   将终端 CLI 版（`antigravity-cli`）的聊天历史记录同步复制到桌面端（`antigravity`）中，并重置 `antigravity_state.pbtxt` 中的数据迁移状态，强制桌面客户端在下次启动时对这部分 CLI 对话进行读取和导入。
 
 ### 使用方法
-1. 关闭 Antigravity 客户端。
-2. 克隆本仓库并运行脚本：
-   ```bash
-   python clean_antigravity.py
-   ```
-3. 重新启动 Antigravity 客户端，您的所有历史对话将完美合并并分类归属到唯一的主项目下。
+
+运行任何脚本前，请确保已完全关闭 Antigravity 客户端。
+
+#### 1. 重复项目合并
+```bash
+python clean_antigravity.py
+```
+
+#### 2. 修复黑屏/加载卡死
+```bash
+# 运行补丁（需要系统已安装 Node.js/npx）
+python patch_blackscreen.py patch
+
+# 如需从备份还原：
+python patch_blackscreen.py restore
+```
+
+#### 3. 同步 CLI 与 GUI 对话记录
+```bash
+# 1. 执行同步
+python sync_history.py
+
+# 2. 启动一次 Antigravity 客户端，让其自动导入新同步的对话记录
+# 3. 关闭客户端，运行清理合并脚本以解决导入过程中可能产生的重复项目：
+python clean_antigravity.py
+```
 
 ## License
 MIT License
