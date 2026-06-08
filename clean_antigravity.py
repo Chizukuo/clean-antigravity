@@ -200,13 +200,16 @@ def run_cleanup(auto_approve=False):
             if success:
                 print(f"[+] Database updated successfully. Re-mapped {replaced_count} occurrences.")
                 
-                # Also patch SQLite db files in conversations directory
-                convos_dir = os.path.join(gemini_dir, "antigravity", "conversations")
-                if os.path.exists(convos_dir):
-                    import sqlite3
-                    import glob
-                    patched_dbs = 0
-                    for db_path in glob.glob(os.path.join(convos_dir, "*.db")):
+                # Also patch project IDs in SQLite .db conversation files in both GUI and CLI directories
+                patched_dbs = 0
+                import glob
+                import sqlite3
+                gui_convos_dir = os.path.join(gemini_dir, "antigravity", "conversations")
+                cli_convos_dir = os.path.join(gemini_dir, "antigravity-cli", "conversations")
+                for base_dir in [gui_convos_dir, cli_convos_dir]:
+                    if not os.path.exists(base_dir):
+                        continue
+                    for db_path in glob.glob(os.path.join(base_dir, "*.db")):
                         try:
                             conn = sqlite3.connect(db_path)
                             c = conn.cursor()
@@ -232,8 +235,8 @@ def run_cleanup(auto_approve=False):
                             conn.close()
                         except Exception as e:
                             print(f"[-] Warning: Failed to patch {os.path.basename(db_path)}: {e}")
-                    if patched_dbs > 0:
-                        print(f"[+] Patched project IDs in {patched_dbs} conversation databases.")
+                if patched_dbs > 0:
+                    print(f"[+] Patched project IDs in {patched_dbs} conversation databases.")
             else:
                 print("[-] Error: Failed to write to database file due to file lock.")
                 print(f"[*] Restoring database from backup {ts_bak_path}...")

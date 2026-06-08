@@ -27,11 +27,11 @@ def main():
         return
 
     gemini_dir = os.path.join(os.path.expanduser("~"), ".gemini")
-    launch_bat = os.path.join(gemini_dir, "launch.bat")
+    launch_vbs = os.path.join(gemini_dir, "launch.vbs")
     app_exe = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Programs", "antigravity", "Antigravity.exe")
 
-    if not os.path.exists(launch_bat):
-        print(f"[-] Error: launch.bat not found at '{launch_bat}'")
+    if not os.path.exists(launch_vbs):
+        print(f"[-] Error: launch.vbs not found at '{launch_vbs}'")
         return
 
     # Determine Start Menu Programs path
@@ -44,8 +44,8 @@ def main():
 
     shortcut_path = os.path.join(programs_dir, "Antigravity.lnk")
     
-    print(f"[*] Creating Start Menu shortcut pointing to: {launch_bat}")
-    create_windows_shortcut(launch_bat, shortcut_path, app_exe)
+    print(f"[*] Creating Start Menu shortcut pointing to: {launch_vbs}")
+    create_windows_shortcut(launch_vbs, shortcut_path, app_exe)
     print(f"[+] Successfully created Start Menu shortcut at: {shortcut_path}")
 
 if __name__ == "__main__":

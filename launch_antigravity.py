@@ -114,36 +114,39 @@ def run_deduplicator():
                     f.write(content)
                 print(f"[+] Database updated. Re-mapped {replaced_count} conversation references.")
                 
-                # Also patch project IDs in SQLite .db conversation files
+                # Also patch project IDs in SQLite .db conversation files in both GUI and CLI directories
                 patched_dbs = 0
                 import glob
                 import sqlite3
-                for db_path in glob.glob(os.path.join(GUI_CONVOS_DIR, "*.db")):
-                    try:
-                        conn = sqlite3.connect(db_path)
-                        c = conn.cursor()
-                        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trajectory_metadata_blob';")
-                        if c.fetchone():
-                            c.execute("SELECT id, data FROM trajectory_metadata_blob")
-                            rows = c.fetchall()
-                            db_updated = False
-                            for row_id, data in rows:
-                                if isinstance(data, bytes):
-                                    new_data = data
-                                    for dup_id, primary_id in mappings.items():
-                                        dup_bytes = dup_id.encode('utf-8')
-                                        primary_bytes = primary_id.encode('utf-8')
-                                        if dup_bytes in new_data:
-                                            new_data = new_data.replace(dup_bytes, primary_bytes)
-                                    if new_data != data:
-                                        c.execute("UPDATE trajectory_metadata_blob SET data = ? WHERE id = ?", (new_data, row_id))
-                                        db_updated = True
-                            if db_updated:
-                                conn.commit()
-                                patched_dbs += 1
-                        conn.close()
-                    except Exception as e:
-                        print(f"[-] Warning: Failed to patch {os.path.basename(db_path)}: {e}")
+                for base_dir in [GUI_CONVOS_DIR, CLI_CONVOS_DIR]:
+                    if not os.path.exists(base_dir):
+                        continue
+                    for db_path in glob.glob(os.path.join(base_dir, "*.db")):
+                        try:
+                            conn = sqlite3.connect(db_path)
+                            c = conn.cursor()
+                            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trajectory_metadata_blob';")
+                            if c.fetchone():
+                                c.execute("SELECT id, data FROM trajectory_metadata_blob")
+                                rows = c.fetchall()
+                                db_updated = False
+                                for row_id, data in rows:
+                                    if isinstance(data, bytes):
+                                        new_data = data
+                                        for dup_id, primary_id in mappings.items():
+                                            dup_bytes = dup_id.encode('utf-8')
+                                            primary_bytes = primary_id.encode('utf-8')
+                                            if dup_bytes in new_data:
+                                                new_data = new_data.replace(dup_bytes, primary_bytes)
+                                        if new_data != data:
+                                            c.execute("UPDATE trajectory_metadata_blob SET data = ? WHERE id = ?", (new_data, row_id))
+                                            db_updated = True
+                                if db_updated:
+                                    conn.commit()
+                                    patched_dbs += 1
+                            conn.close()
+                        except Exception as e:
+                            print(f"[-] Warning: Failed to patch {os.path.basename(db_path)}: {e}")
                 if patched_dbs > 0:
                     print(f"[+] Patched project IDs in {patched_dbs} conversation databases.")
         except Exception as e:
