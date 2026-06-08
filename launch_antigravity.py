@@ -165,6 +165,19 @@ def run_deduplicator():
 # ----------------------------------------------------
 # Step 2: Sync CLI history
 # ----------------------------------------------------
+def is_app_running():
+    if sys.platform != "win32":
+        try:
+            res = subprocess.run(["pgrep", "-f", "Antigravity"], capture_output=True)
+            return res.returncode == 0
+        except Exception:
+            return False
+    try:
+        output = subprocess.check_output('tasklist /FI "IMAGENAME eq Antigravity.exe"', shell=True, text=True)
+        return "Antigravity.exe" in output
+    except Exception:
+        return False
+
 def run_sync():
     print("[*] Performing bidirectional synchronization between CLI and GUI...")
     if not os.path.exists(CLI_CONVOS_DIR):
@@ -215,23 +228,145 @@ def run_sync():
     if synced_to_gui > 0 or synced_to_cli > 0:
         print(f"[+] Bidirectional sync complete. CLI -> GUI: {synced_to_gui} files, GUI -> CLI: {synced_to_cli} files.")
         if synced_to_gui > 0 and os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                content = re.sub(r"migrate_convos_into_projects:\s*\w+", "migrate_convos_into_projects:  MIGRATION_STATUS_NOT_STARTED", content)
-                content = re.sub(r"migrate_retroactive_projects:\s*\w+", "migrate_retroactive_projects:  RETROACTIVE_MIGRATION_STATUS_NOT_STARTED", content)
-                
-                with open(STATE_FILE, "w", encoding="utf-8") as f:
-                    f.write(content)
-                print("[+] Reset migration state to trigger import on startup.")
-            except Exception as e:
-                print(f"[-] Failed to update migration state: {e}")
+            if is_app_running():
+                print("[*] Antigravity is already running. Skipping migration reset to avoid onboarding popup.")
+            else:
+                try:
+                    with open(STATE_FILE, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    
+                    content = re.sub(r"migrate_convos_into_projects:\s*\w+", "migrate_convos_into_projects:  MIGRATION_STATUS_NOT_STARTED", content)
+                    content = re.sub(r"migrate_retroactive_projects:\s*\w+", "migrate_retroactive_projects:  RETROACTIVE_MIGRATION_STATUS_NOT_STARTED", content)
+                    
+                    with open(STATE_FILE, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    print("[+] Reset migration state to trigger import on startup.")
+                except Exception as e:
+                    print(f"[-] Failed to update migration state: {e}")
     else:
         print("[+] Conversations are already fully synchronized.")
 
 # ----------------------------------------------------
-# Step 3: Launch Antigravity
+# Onboarding State Preservation & Restore (Prevents repeated onboarding guide)
+# ----------------------------------------------------
+SAVED_ONBOARDING_STATE = None
+
+def capture_onboarding_state():
+    global SAVED_ONBOARDING_STATE
+    if not os.path.exists(STATE_FILE):
+        return
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Check if completed onboarding steps are present in the active file
+        if "completed_steps" in content:
+            post_onboarding_match = re.search(r"post_onboarding:\s*\{[^}]*\}", content)
+            seen_nuxs_match = re.search(r"seen_nuxs:\s*\{[^}]*\}", content)
+            
+            post_onboarding = post_onboarding_match.group(0) if post_onboarding_match else None
+            seen_nuxs = seen_nuxs_match.group(0) if seen_nuxs_match else None
+            
+            if post_onboarding and seen_nuxs:
+                SAVED_ONBOARDING_STATE = (post_onboarding, seen_nuxs)
+                print("[+] Captured onboarding state from active file.")
+                return
+                
+        # If not found in the active file, check the backup file (.bak)
+        bak_path = STATE_FILE + ".bak"
+        if os.path.exists(bak_path):
+            with open(bak_path, "r", encoding="utf-8") as f:
+                bak_content = f.read()
+            if "completed_steps" in bak_content:
+                post_onboarding_match = re.search(r"post_onboarding:\s*\{[^}]*\}", bak_content)
+                seen_nuxs_match = re.search(r"seen_nuxs:\s*\{[^}]*\}", bak_content)
+                
+                post_onboarding = post_onboarding_match.group(0) if post_onboarding_match else None
+                seen_nuxs = seen_nuxs_match.group(0) if seen_nuxs_match else None
+                
+                if post_onboarding and seen_nuxs:
+                    SAVED_ONBOARDING_STATE = (post_onboarding, seen_nuxs)
+                    print("[+] Captured onboarding state from backup file.")
+                    return
+    except Exception as e:
+        print(f"[-] Warning: Failed to capture onboarding state: {e}")
+
+    # Fallback to default completed state if not found anywhere
+    post_onboarding = """post_onboarding:  {
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_MANAGER_WELCOME
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_USAGE_MODE
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_AGENT_CONFIGURATION
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_ADD_WORKSPACE
+}"""
+    seen_nuxs = """seen_nuxs:  {
+  uids:  23
+  uids:  25
+  uids:  24
+  uids:  26
+  uids:  27
+}"""
+    SAVED_ONBOARDING_STATE = (post_onboarding, seen_nuxs)
+    print("[+] Used default fallback onboarding state.")
+
+def watch_and_restore_onboarding():
+    if not SAVED_ONBOARDING_STATE:
+        return
+        
+    print("[*] Monitoring state file to restore onboarding status...")
+    post_onboarding_str, seen_nuxs_str = SAVED_ONBOARDING_STATE
+    start_time = time.time()
+    restored = False
+    
+    while time.time() - start_time < 90:
+        time.sleep(1.0)
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # Check if Language Server has written MIGRATION_STATUS_COMPLETED
+                if "migrate_convos_into_projects:  MIGRATION_STATUS_COMPLETED" in content:
+                    # Check if post_onboarding is empty (wiped) or missing entirely
+                    if "post_onboarding" not in content or "post_onboarding:  {}" in content or "post_onboarding: {}" in content:
+                        new_content = content
+                        
+                        # Replace empty post_onboarding with saved block
+                        if "post_onboarding:  {}" in new_content:
+                            new_content = new_content.replace("post_onboarding:  {}", post_onboarding_str)
+                        elif "post_onboarding: {}" in new_content:
+                            new_content = new_content.replace("post_onboarding: {}", post_onboarding_str)
+                        elif "post_onboarding" not in new_content:
+                            # Append it to the file
+                            new_content += "\n" + post_onboarding_str
+                            
+                        # Insert seen_nuxs if missing
+                        if "seen_nuxs" not in new_content:
+                            new_content += "\n" + seen_nuxs_str
+                        
+                        # Ensure agent_onboarding_completed is set to COMPLETED
+                        if "agent_onboarding_completed:  AGENT_ONBOARDING_STATE_COMPLETED" not in new_content:
+                            if "agent_onboarding_completed" not in new_content:
+                                new_content += "\nagent_onboarding_completed:  AGENT_ONBOARDING_STATE_COMPLETED"
+                            else:
+                                new_content = re.sub(
+                                    r"agent_onboarding_completed:\s*\w+",
+                                    "agent_onboarding_completed:  AGENT_ONBOARDING_STATE_COMPLETED",
+                                    new_content
+                                )
+                            
+                        with open(STATE_FILE, "w", encoding="utf-8") as f:
+                            f.write(new_content)
+                        print("[+] Onboarding status successfully restored!")
+                        restored = True
+                        break
+            except Exception:
+                pass
+                
+    if not restored:
+        print("[*] Onboarding status monitor finished (no restore performed).")
+
+# ----------------------------------------------------
+# Step 4: Setup Clash Proxy
 # ----------------------------------------------------
 def setup_proxy():
     import socket
@@ -266,7 +401,7 @@ def setup_proxy():
     return False, None
 
 # ----------------------------------------------------
-# Step 3: Launch Antigravity
+# Step 5: Launch Antigravity
 # ----------------------------------------------------
 def launch_app(use_proxy=False, proxy_url=None):
     if not APP_EXE or not os.path.exists(APP_EXE):
@@ -295,11 +430,23 @@ def launch_app(use_proxy=False, proxy_url=None):
 
 if __name__ == "__main__":
     import json
+    # Check if app is running
+    app_was_running = is_app_running()
+    
     # Detect and set up Clash proxy if active
     use_proxy, proxy_url = setup_proxy()
-    # Run offline deduplication first (to clean up from last GUI session)
+    
+    # Only capture onboarding state if the app is NOT running (since we only reset flags then)
+    if not app_was_running:
+        capture_onboarding_state()
+        
+    # Run offline deduplication first
     run_deduplicator()
-    # Run sync history (to stage any new CLI conversations for import)
+    # Run sync history
     run_sync()
     # Launch GUI
     launch_app(use_proxy, proxy_url)
+    
+    # Only monitor if the app was NOT running and we captured onboarding
+    if not app_was_running and SAVED_ONBOARDING_STATE:
+        watch_and_restore_onboarding()

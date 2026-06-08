@@ -43,10 +43,13 @@ def main():
         programs_dir = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs")
 
     shortcut_path = os.path.join(programs_dir, "Antigravity.lnk")
+    custom_shortcut_path = os.path.join(programs_dir, "Antigravity (Proxy & Sync).lnk")
     
-    print(f"[*] Creating Start Menu shortcut pointing to: {launch_vbs}")
+    print(f"[*] Creating Start Menu shortcuts pointing to: {launch_vbs}")
     create_windows_shortcut(launch_vbs, shortcut_path, app_exe)
+    create_windows_shortcut(launch_vbs, custom_shortcut_path, app_exe)
     print(f"[+] Successfully created Start Menu shortcut at: {shortcut_path}")
+    print(f"[+] Successfully created custom Start Menu shortcut at: {custom_shortcut_path}")
 
 if __name__ == "__main__":
     main()
